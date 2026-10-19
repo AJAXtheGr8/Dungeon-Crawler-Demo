@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dungeon Crawler</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0a;
+  color: #e0e0e0;
+  font-family: 'Courier New', monospace;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  overflow: hidden;
+  margin: 0;
+}
+#game-container {
+  display: flex;
+  border: 2px solid #333;
+  background: #111;
+}
+#canvas-wrapper {
+  width: 1200px;
+  height: 900px;
+  position: relative;
+}
+canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  display: block;
+}
+#side-panel {
+  width: 260px;
+  min-width: 260px;
+  padding: 10px;
+  background: #0d0d0d;
+  border-left: 2px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+#side-panel h2 {
+  color: #f0c040; font-size: 13px;
+  margin-bottom: 8px; text-align: center;
+  border-bottom: 1px solid #333; padding-bottom: 6px;
+}
+.stat-block { margin-bottom: 11px; font-size: 10px; }
+.stat-block .label { color: #888; }
+.stat-block .value { color: #fff; font-weight: bold; }
+.hp-bar { width: 100%; height: 11px; background: #333; border: 1px solid #555; margin-top: 3px; position: relative; }
+.hp-bar-fill { height: 100%; background: linear-gradient(90deg, #c0392b, #e74c3c); transition: width 0.3s; }
+.hp-bar-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #fff; text-shadow: 1px 1px 1px #000; }
+#combat-log { margin-top: 8px; flex: 1; min-height: 0; overflow-y: auto; font-size: 10px; border: 1px solid #222; padding: 6px; background: #0a0a0a; }
+#combat-log .log-entry { margin-bottom: 2px; line-height: 1.3; }
+.log-player { color: #3498db; }
+.log-enemy { color: #e74c3c; }
+.log-item { color: #f1c40f; }
+.log-system { color: #888; }
+.log-heal { color: #2ecc71; }
+#overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.85);
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  z-index: 10;
+}
+#overlay.hidden { display: none; }
+#overlay h1 { font-size: 26px; margin-bottom: 8px; }
+#overlay p { font-size: 13px; margin-bottom: 16px; color: #aaa; }
+#overlay button {
+  padding: 10px 26px; font-size: 13px;
+  font-family: 'Courier New', monospace;
+  background: #f0c040; color: #000; border: none;
+  cursor: pointer; font-weight: bold; transition: background 0.2s;
+}
+#overlay button:hover { background: #ffd966; }
+#legend { margin-top: 10px; font-size: 9px; color: #666; line-height: 1.4; }
+.legend-dot { display: inline-block; width: 8px; height: 8px; vertical-align: middle; margin-right: 3px; border: 1px solid #444; }
+#god-btn {
+  margin-top: 8px; padding: 6px 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px; background: #333;
+  color: #888; border: 1px solid #444;
+  cursor: pointer; text-align: center;
+  transition: all 0.2s;
+}
+#god-btn:hover { background: #444; }
+#god-btn.active {
+  background: #f0c040; color: #000;
+  border-color: #f0c040; font-weight: bold;
+}
+</style>
+</head>
+<body>
+<div id="game-container">
+  <div id="canvas-wrapper">
+    <canvas id="game-canvas"></canvas>
+  </div>
+  <div id="side-panel">
+    <h2>⚔ DUNGEON CRAWLER</h2>
+    <div class="stat-block">
+      <span class="label">Health: </span><span class="value" id="hp-text">20/20</span>
+      <div class="hp-bar"><div class="hp-bar-fill" id="hp-bar-fill"></div><div class="hp-bar-text" id="hp-bar-text"></div></div>
+    </div>
+    <div class="stat-block"><span class="label">Level: </span><span class="value" id="level-text">1</span></div>
+    <div class="stat-block"><span class="label">Attack: </span><span class="value" id="atk-text">3</span></div>
+    <div class="stat-block"><span class="label">Defense: </span><span class="value" id="def-text">1</span></div>
+    <div class="stat-block"><span class="label">Turns: </span><span class="value" id="turn-text">0</span></div>
+    <div class="stat-block"><span class="label">Floor: </span><span class="value" id="floor-text">1</span></div>
+    <div class="stat-block"><span class="label">XP: </span><span class="value" id="xp-text">0 / 10</span></div>
+    <div class="stat-block"><span class="label">Potions: </span><span class="value" id="pot-text">1</span></div>
+    <button id="god-btn" onclick="toggleGodMode()">👁 GOD Mode [G]</button>
+    <div id="combat-log"></div>
+    <div id="legend">
+      <div><span class="legend-dot" style="background:#2ecc71"></span> Player</div>
+      <div><span class="legend-dot" style="background:#e74c3c"></span> Enemy</div>
+      <div><span class="legend-dot" style="background:#3498db"></span> Potion</div>
+      <div><span class="legend-dot" style="background:#f1c40f"></span> Stairs</div>
+      <div><span class="legend-dot" style="background:#555"></span> Wall</div>
+      <div><span class="legend-dot" style="background:#444"></span> Floor (seen)</div>
+    </div>
+  </div>
+  <div id="overlay">
+    <h1 id="overlay-title">⚔ Dungeon Crawler</h1>
+    <p id="overlay-msg">Descend into the procedural dungeon. Find the golden stairs to escape!</p>
+    <button id="overlay-btn" onclick="startGame()">Begin Dungeon</button>
+  </div>
+</div>
+<script>
+const TILE = { WALL: 0, FLOOR: 1, CORRIDOR: 2 };
+const MAP_W = 60, MAP_H = 45, CELL = 20, FOV_RADIUS = 5;
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = MAP_W * CELL;
+canvas.height = MAP_H * CELL;
+
+let map, explored, visible, player, enemies, items, stairs, gameOver, turnCount, currentFloor, rooms, godMode;
+const COLORS = {
+  wallLit: '#555555', wallDark: '#1a1a1a',
+  floorLit: '#333333', floorSeen: '#222222',
+  player: '#2ecc71',
+  enemy: '#e74c3c', enemyDim: '#6b2020',
+  potion: '#3498db', potionDim: '#1a4a6b',
+  stairs: '#f1c40f', stairsDim: '#5a4a00',
+};
+
+function rng(a,b){return Math.floor(Math.random()*(b-a+1))+a}
+function dist(a,b){return Math.abs(a.x-b.x)+Math.abs(a.y-b.y)}
+function inB(x,y){return x>=0&&x<MAP_W&&y>=0&&y<MAP_H}
+function isWall(x,y){return inB(x,y)&&map[y][x]===TILE.WALL}
+
+// --- SCREEN SCALING ---
+function applyScale(){
+  const container = document.getElementById('game-container');
+  const totalW = canvas.width + 260;
+  const totalH = canvas.height;
+  const pad = 16;
+  const scaleX = (window.innerWidth - pad * 2) / totalW;
+  const scaleY = (window.innerHeight - pad * 2) / totalH;
+  const scale = Math.min(scaleX, scaleY, 1);
+  const finalW = Math.floor(totalW * scale);
+  const finalH = Math.floor(totalH * scale);
+  container.style.width = finalW + 'px';
+  container.style.height = finalH + 'px';
+  container.style.transform = 'none';
+  const wrapper = document.getElementById('canvas-wrapper');
+  const panel = document.getElementById('side-panel');
+  wrapper.style.width = Math.floor(canvas.width * scale) + 'px';
+  wrapper.style.height = Math.floor(canvas.height * scale) + 'px';
+  panel.style.width = Math.floor(260 * scale) + 'px';
+  panel.style.minWidth = Math.floor(260 * scale) + 'px';
+}
+window.addEventListener('resize', applyScale);
+
+// --- DUNGEON GENERATION ---
+function generateDungeon(){
+  map=Array.from({length:MAP_H},()=>Array.from({length:MAP_W},()=>TILE.WALL));
+  const rooms=[];
+  const numRooms=rng(5,7);
+  for(let att=0;att<300&&rooms.length<numRooms;att++){
+    const w=rng(4,9),h=rng(4,8);
+    const x=rng(1,MAP_W-w-2),y=rng(1,MAP_H-h-2);
+    let ov=false;
+    for(const r of rooms){
+      if(x<r.x+r.w+1&&x+w+1>r.x&&y<r.y+r.h+1&&y+h+1>r.y){ov=true;break}
+    }
+    if(!ov){
+      rooms.push({x,y,w,h});
+      for(let i=x;i<x+w;i++)for(let j=y;j<y+h;j++)map[j][i]=TILE.FLOOR;
+    }
+  }
+  for(let i=1;i<rooms.length;i++){
+    const a=rooms[i-1],b=rooms[i];
+    const ax=Math.floor(a.x+a.w/2),ay=Math.floor(a.y+a.h/2);
+    const bx=Math.floor(b.x+b.w/2),by=Math.floor(b.y+b.h/2);
+    if(Math.random()<0.5){carveL(ax,ay,bx,ay);carveL(bx,ay,bx,by)}
+    else{carveL(ax,ay,ax,by);carveL(ax,by,bx,by)}
+  }
+  for(let i=2;i<rooms.length;i++){
+    if(Math.random()<0.35){
+      const a=rooms[i-1],b=rooms[i];
+      const ax=Math.floor(a.x+a.w/2),ay=Math.floor(a.y+a.h/2);
+      const bx=Math.floor(b.x+b.w/2),by=Math.floor(b.y+b.h/2);
+      if(Math.random()<0.5){carveL(ax,ay,bx,ay);carveL(bx,ay,bx,by)}
+      else{carveL(ax,ay,ax,by);carveL(ax,by,bx,by)}
+    }
+  }
+  return rooms;
+}
+
+function carveL(x1,y1,x2,y2){
+  let x=x1,y=y1;
+  while(x!==x2){map[y][x]=TILE.CORRIDOR;x+=x<x2?1:-1}
+  while(y!==y2){map[y][x]=TILE.CORRIDOR;y+=y<y2?1:-1}
+}
+
+// --- ENTITY SPAWNING ---
+function spawnInRoom(rooms,exclude){
+  const ri=rng(1,rooms.length-1);
+  const r=rooms[ri];
+  for(let t=0;t<200;t++){
+    const x=rng(r.x+1,r.x+r.w-2),y=rng(r.y+1,r.y+r.h-2);
+    if(inB(x,y)&&map[y][x]!==TILE.WALL&&!(exclude&&x===exclude.x&&y===exclude.y))return{x,y};
+  }
+  const fr=rooms[rng(0,rooms.length-1)];
+  for(let t=0;t<200;t++){
+    const x=rng(fr.x+1,fr.x+fr.w-2),y=rng(fr.y+1,fr.y+fr.h-2);
+    if(inB(x,y)&&map[y][x]!==TILE.WALL)return{x,y};
+  }
+  return{x:1,y:1};
+}
+
+function initPlayer(rooms){
+  const sx=rng(rooms[0].x+1,rooms[0].x+rooms[0].w-2);
+  const sy=rng(rooms[0].y+1,rooms[0].y+rooms[0].h-2);
+  return{x:sx,y:sy,hp:20,maxHp:20,atk:3,def:1,level:1,xp:0,xpNext:10,potions:1};
+}
+
+function spawnEnemies(rooms){
+  const list=[];
+  const types=[
+    {name:'Goblin',hp:8,atk:3,xp:4},
+    {name:'Orc',hp:14,atk:5,xp:7},
+    {name:'Skeleton',hp:10,atk:4,xp:5},
+    {name:'Wraith',hp:12,atk:6,xp:9},
+    {name:'Troll',hp:20,atk:7,xp:12},
+  ];
+  for(let i=0;i<types.length&&i<rooms.length;i++){
+    const pos=spawnInRoom(rooms);
+    const t=types[i%types.length];
+    list.push({...pos,...t,maxHp:t.hp,id:i});
+  }
+  return list;
+}
+
+function spawnItems(rooms){
+  const list=[];
+  for(let i=0;i<rng(4,6);i++){
+    const pos=spawnInRoom(rooms);
+    list.push({...pos,type:'potion'});
+  }
+  return list;
+}
+
+function placeStairs(rooms){
+  const r=rooms[rooms.length-1];
+  return{x:rng(r.x+1,r.x+r.w-2),y:rng(r.y+1,r.y+r.h-2)};
+}
+
+// --- FIELD OF VIEW (Raycasting) ---
+function computeFOV(px,py){
+  for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++)visible[y][x]=0;
+  const numRays = 360;
+  for(let i=0;i<numRays;i++){
+    const angle = (i / numRays) * Math.PI * 2;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    let cx = px + 0.5, cy = py + 0.5;
+    for(let r=0;r<FOV_RADIUS;r+=0.5){
+      cx += cosA * 0.5;
+      cy += sinA * 0.5;
+      const tx = Math.floor(cx), ty = Math.floor(cy);
+      if(!inB(tx,ty))break;
+      visible[ty][tx]=1;
+      explored[ty][tx]=1;
+      if(isWall(tx,ty))break;
+    }
+  }
+}
+
+// --- LINE OF SIGHT ---
+function hasLOS(x0,y0,x1,y1){
+  const dx=Math.abs(x1-x0),dy=Math.abs(y1-y0);
+  let sx=x0<x1?1:-1,sy=y0<y1?1:-1;
+  let x=x0,y=y0,err=dx-dy;
+  while(true){
+    if(x===x1&&y===y1)return true;
+    if(isWall(x,y)&&!(x===player.x&&y===player.y))return false;
+    const e2=2*err;
+    if(e2>-dy){err-=dy;x+=sx}
+    if(e2<dx){err+=dx;y+=sy}
+  }
+}
+
+function enemiesCanSeePlayer(){
+  for(const e of enemies){
+    if(e.hp<=0)continue;
+    if(dist(e,player)<=8&&visible[e.y][e.x]){
+      if(hasLOS(e.x,e.y,player.x,player.y))return true;
+    }
+  }
+  return false;
+}
+
+// --- PATHFINDING (BFS) ---
+function findPath(sx,sy,tx,ty){
+  if(!inB(tx,ty)||isWall(tx,ty))return null;
+  const key=(x,y)=>y*MAP_W+x;
+  const visited=new Set([key(sx,sy)]);
+  const queue=[{x:sx,y:sy,path:[]}];
+  const dirs=[{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}];
+  while(queue.length){
+    const cur=queue.shift();
+    if(cur.x===tx&&cur.y===ty)return cur.path;
+    for(const d of dirs){
+      const nx=cur.x+d.dx,ny=cur.y+d.dy;
+      if(!visited.has(key(nx,ny))&&inB(nx,ny)&&!isWall(nx,ny)){
+        visited.add(key(nx,ny));
+        queue.push({x:nx,y:ny,path:[...cur.path,{x:nx,y:ny}]});
+      }
+    }
+  }
+  return null;
+}
+
+// --- ENEMY AI ---
+function moveEnemies(){
+  for(const e of enemies){
+    if(e.hp<=0)continue;
+    if(e.x===player.x&&e.y===player.y){enemyMelee(e);continue}
+    if(!visible[e.y][e.x]||!enemiesCanSeePlayer()){
+      wander(e);continue;
+    }
+    const path=findPath(e.x,e.y,player.x,player.y);
+    if(path&&path.length>0){
+      const next=path[0];
+      const blocked=enemies.find(o=>o!==e&&o.hp>0&&o.x===next.x&&o.y===next.y);
+      if(!blocked){e.x=next.x;e.y=next.y}
+      else{
+        const dirs=[{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}];
+        dirs.sort(()=>Math.random()-0.5);
+        let moved=false;
+        for(const d of dirs){
+          const nx=e.x+d.dx,ny=e.y+d.dy;
+          if(inB(nx,ny)&&!isWall(nx,ny)&&!enemies.find(o=>o!==e&&o.hp>0&&o.x===nx&&o.y===ny)){
+            e.x=nx;e.y=ny;moved=true;break;
+          }
+        }
+        if(!moved)enemyMelee(e);
+      }
+    }else{wander(e)}
+  }
+}
+
+function wander(e){
+  const dirs=[{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}];
+  dirs.sort(()=>Math.random()-0.5);
+  for(const d of dirs){
+    const nx=e.x+d.dx,ny=e.y+d.dy;
+    if(inB(nx,ny)&&!isWall(nx,ny)&&!enemies.find(o=>o!==e&&o.hp>0&&o.x===nx&&o.y===ny)){
+      e.x=nx;e.y=ny;return;
+    }
+  }
+}
+
+function enemyMelee(e){
+  const dmg=Math.max(1,e.atk-player.def);
+  player.hp-=dmg;
+  addLog('Player hit by '+e.name+' for '+dmg+' dmg!','enemy');
+  if(player.hp<=0){player.hp=0;addLog('You have been slain...','enemy');endGame(false)}
+}
+
+// --- COMBAT ---
+function playerMelee(enemy){
+  const dmg=Math.max(1,player.atk-1);
+  enemy.hp-=dmg;
+  addLog('You hit '+enemy.name+' for '+dmg+' dmg!','player');
+  if(enemy.hp<=0){
+    addLog(enemy.name+' defeated! (+'+enemy.xp+' XP)','system');
+    player.xp+=enemy.xp;
+    if(player.xp>=player.xpNext){
+      player.xp-=player.xpNext;
+      player.level++;
+      player.maxHp+=5;player.hp=Math.min(player.hp+5,player.maxHp);
+      player.atk+=2;player.def+=1;
+      player.xpNext=Math.floor(player.xpNext*1.5);
+      addLog('Level up! Now level '+player.level+'!','heal');
+    }
+  }
+}
+
+// --- COMBAT LOG ---
+function addLog(msg,type){
+  const div=document.createElement('div');
+  div.className='log-entry log-'+type;
+  div.textContent=msg;
+  const logEl=document.getElementById('combat-log');
+  logEl.appendChild(div);
+  logEl.scrollTop=logEl.scrollHeight;
+  while(logEl.children.length>100)logEl.removeChild(logEl.firstChild);
+}
+
+// --- GOD MODE ---
+function toggleGodMode(){
+  godMode = !godMode;
+  const btn = document.getElementById('god-btn');
+  if(godMode){
+    btn.classList.add('active');
+    btn.textContent='👁 GOD Mode ON [G]';
+  } else {
+    btn.classList.remove('active');
+    btn.textContent='👁 GOD Mode [G]';
+  }
+  computeFOV(player.x, player.y);
+  render();
+}
+
+// --- GAME STATE ---
+function endGame(victory){
+  gameOver=true;
+  const ov=document.getElementById('overlay');
+  ov.classList.remove('hidden');
+  document.getElementById('overlay-title').textContent=victory?'⚔ VICTORY!':'☠ DEFEATED';
+  document.getElementById('overlay-msg').textContent=victory
+    ?'You escaped the dungeon on floor '+currentFloor+' in '+turnCount+' turns! (Level '+player.level+')'
+    :'You were slain on floor '+currentFloor+' in '+turnCount+' turns. (Level '+player.level+')';
+  document.getElementById('overlay-btn').textContent='Generate New Dungeon';
+}
+
+function updateUI(){
+  document.getElementById('hp-text').textContent=player.hp+'/'+player.maxHp;
+  document.getElementById('hp-bar-fill').style.width=Math.max(0,(player.hp/player.maxHp)*100)+'%';
+  document.getElementById('hp-bar-text').textContent=player.hp+'/'+player.maxHp;
+  document.getElementById('level-text').textContent=player.level;
+  document.getElementById('atk-text').textContent=player.atk;
+  document.getElementById('def-text').textContent=player.def;
+  document.getElementById('turn-text').textContent=turnCount;
+  document.getElementById('floor-text').textContent=currentFloor;
+  document.getElementById('xp-text').textContent=player.xp+'/'+player.xpNext;
+  document.getElementById('pot-text').textContent=player.potions;
+}
+
+// --- RENDERING ---
+function render(){
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      if(godMode){
+        ctx.fillStyle=map[y][x]===TILE.WALL?COLORS.wallLit:COLORS.floorLit;
+        ctx.fillRect(x*CELL,y*CELL,CELL,CELL);
+        continue;
+      }
+      const vis=visible[y][x];
+      const seen=explored[y][x];
+      if(!seen){ctx.fillStyle='#000';ctx.fillRect(x*CELL,y*CELL,CELL,CELL);continue}
+      if(map[y][x]===TILE.WALL){
+        ctx.fillStyle=vis?COLORS.wallLit:COLORS.wallDark;
+      }else{
+        ctx.fillStyle=vis?COLORS.floorLit:COLORS.floorSeen;
+      }
+      ctx.fillRect(x*CELL,y*CELL,CELL,CELL);
+    }
+  }
+
+  const showAll = godMode;
+
+  for(const item of items){
+    if(!showAll && !explored[item.y][item.x])continue;
+    ctx.fillStyle=COLORS.potion;
+    ctx.fillRect(item.x*CELL+4,item.y*CELL+4,CELL-8,CELL-8);
+    if(showAll){ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fillRect(item.x*CELL,item.y*CELL,CELL,CELL)}
+  }
+
+  if(!showAll && !explored[stairs.y][stairs.x]){
+    // skip stairs
+  } else {
+    ctx.fillStyle=COLORS.stairs;
+    ctx.fillRect(stairs.x*CELL+2,stairs.y*CELL+2,CELL-4,CELL-4);
+    if(showAll){ctx.fillStyle='rgba(241,196,15,0.15)';ctx.fillRect(stairs.x*CELL,stairs.y*CELL,CELL,CELL)}
+  }
+
+  for(const e of enemies){
+    if(e.hp<=0)continue;
+    if(!showAll && !explored[e.y][e.x])continue;
+    ctx.fillStyle=COLORS.enemy;
+    ctx.fillRect(e.x*CELL+2,e.y*CELL+2,CELL-4,CELL-4);
+    if(showAll){ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(e.x*CELL,e.y*CELL,CELL,CELL)}
+  }
+
+  ctx.fillStyle=COLORS.player;
+  ctx.fillRect(player.x*CELL+2,player.y*CELL+2,CELL-4,CELL-4);
+  if(showAll){ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(player.x*CELL,player.y*CELL,CELL,CELL)}
+
+  ctx.strokeStyle='rgba(50,50,50,0.3)';
+  ctx.lineWidth=0.5;
+  for(let x=0;x<=MAP_W;x++){ctx.beginPath();ctx.moveTo(x*CELL,0);ctx.lineTo(x*CELL,MAP_H*CELL);ctx.stroke()}
+  for(let y=0;y<=MAP_H;y++){ctx.beginPath();ctx.moveTo(0,y*CELL);ctx.lineTo(MAP_W*CELL,y*CELL);ctx.stroke()}
+
+  updateUI();
+}
+
+// --- TURN PROCESSING ---
+function processTurn(dx,dy){
+  if(gameOver)return;
+  const nx=player.x+dx,ny=player.y+dy;
+  if(!inB(nx,ny)||isWall(nx,ny))return;
+
+  const enemyHere=enemies.find(e=>e.hp>0&&e.x===nx&&e.y===ny);
+  if(enemyHere){
+    playerMelee(enemyHere);
+    turnCount++;
+    computeFOV(player.x,player.y);
+    moveEnemies();
+    render();return;
+  }
+
+  player.x=nx;player.y=ny;
+  computeFOV(player.x,player.y);
+
+  for(const item of items){
+    if(item.x===nx&&item.y===ny){
+      if(item.type==='potion'){
+        player.potions++;
+        addLog('Picked up a potion! (Total: '+player.potions+')','item');
+        item.removed=true;
+      }
+    }
+  }
+  items=items.filter(i=>!i.removed);
+
+  if(nx===stairs.x&&ny===stairs.y){
+    addLog('You descend deeper into the dungeon...','system');
+    currentFloor++;
+    initFloor();
+    render();return;
+  }
+
+  turnCount++;
+  moveEnemies();
+  render();
+}
+
+// --- INIT ---
+function initFov(){
+  explored=Array.from({length:MAP_H},()=>new Uint8Array(MAP_W));
+  visible=Array.from({length:MAP_H},()=>new Uint8Array(MAP_W));
+}
+
+function initFloor(){
+  rooms=generateDungeon();
+  player=initPlayer(rooms);
+  enemies=spawnEnemies(rooms);
+  items=spawnItems(rooms);
+  stairs=placeStairs(rooms);
+  initFov();
+  turnCount=0;
+  gameOver=false;
+  godMode=false;
+  const btn=document.getElementById('god-btn');
+  btn.classList.remove('active');
+  btn.textContent='👁 GOD Mode [G]';
+  document.getElementById('combat-log').innerHTML='';
+  addLog('You descend into the dungeon...','system');
+  if(currentFloor===1)addLog('Find the golden stairs (>) to descend deeper.','system');
+  computeFOV(player.x, player.y);
+}
+
+function startGame(){
+  document.getElementById('overlay').classList.add('hidden');
+  currentFloor=rng(1,99);
+  initFloor();
+  render();
+}
+
+// --- INPUT ---
+document.addEventListener('keydown',e=>{
+  if(gameOver&&document.getElementById('overlay').classList.contains('hidden')){
+    startGame();return;
+  }
+  switch(e.key){
+    case'w':case'W':case'ArrowUp':processTurn(0,-1);break;
+    case's':case'S':case'ArrowDown':processTurn(0,1);break;
+    case'a':case'A':case'ArrowLeft':processTurn(-1,0);break;
+    case'd':case'D':case'ArrowRight':processTurn(1,0);break;
+    case'1':case'q':case'Q':processTurn(-1,-1);break;
+    case'3':case'e':case'E':processTurn(1,-1);break;
+    case'7':case'y':case'Y':processTurn(-1,1);break;
+    case'9':case'u':case'U':processTurn(1,1);break;
+    case'2':case'n':case'N':processTurn(0,1);break;
+    case'4':case'h':case'H':processTurn(-1,0);break;
+    case'6':case'l':case'L':processTurn(1,0);break;
+    case'8':case'i':case'I':processTurn(0,-1);break;
+    case'5':case'j':case'J':
+      if(player.potions>0&&player.hp<player.maxHp){
+        player.potions--;
+        const healed=Math.min(player.maxHp-player.hp,10);
+        player.hp+=healed;
+        addLog('Used potion. Healed '+healed+' HP. ('+player.potions+' left)','heal');
+        turnCount++;computeFOV(player.x,player.y);moveEnemies();render();
+      }else addLog('No potions or at full health','system');
+      break;
+    case' ':turnCount++;computeFOV(player.x,player.y);moveEnemies();render();break;
+    case'g':case'G':toggleGodMode();break;
+  }
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();
+});
+
+// --- START ---
+applyScale();
+document.getElementById('overlay').classList.remove('hidden');
+</script>
+</body>
+</html>
